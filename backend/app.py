@@ -8,12 +8,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from demo import make_demo
-from models import RouterRequest, ReconstructionRequest, ReconstructionResponse
+from models import RouterRequest, ReconstructionRequest, ReconstructionResponse, CalibrationRequest, CalibrationResponse
 from reconstruction import reconstruct
 from calibration import calibrate
-from models import CalibrationRequest, CalibrationResponse
 
-app = FastAPI(title="Maps RF Reconstruction API", version="0.1.0")
+app = FastAPI(title="Maps RF Reconstruction API", version="0.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
                    allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
 
@@ -83,7 +82,7 @@ def run_reconstruction(payload: ReconstructionRequest):
 
 
 @app.post("/api/calibrate", response_model=CalibrationResponse)
-def calibrate_path_loss(payload: CalibrationRequest):
+def run_calibration(payload: CalibrationRequest):
     try:
         classify_router(payload.identifier)
         return calibrate(payload)

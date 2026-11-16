@@ -37,11 +37,23 @@ class ReconstructionRequest(BaseModel):
     source: Literal["measured", "simulated"] = "measured"
 
 
-class CellInfo(BaseModel):
-    x: int
-    y: int
-    attenuation_db_per_m: float
-    confidence: float
+class CalibrationPoint(BaseModel):
+    distance_m: float = Field(ge=1, le=200)
+    rssi_dbm: float = Field(ge=-130, le=0)
+    line_of_sight: bool = True
+
+
+class CalibrationRequest(RouterRequest):
+    samples: list[CalibrationPoint] = Field(min_length=8, max_length=300)
+
+
+class CalibrationResponse(BaseModel):
+    baseline_dbm_at_1m: float
+    path_loss_exponent: float
+    samples_used: int
+    median_abs_error_db: float
+    warnings: list[str]
+    model_description: str
 
 
 class SurveyTarget(BaseModel):
@@ -50,6 +62,14 @@ class SurveyTarget(BaseModel):
     support: int
     angular_bins: int
     reason: str
+
+
+class CellInfo(BaseModel):
+    x: int
+    y: int
+    attenuation_db_per_m: float
+    confidence: float
+
 
 class ReconstructionResponse(BaseModel):
     source: Literal["measured", "simulated"]
@@ -67,29 +87,12 @@ class ReconstructionResponse(BaseModel):
     measurements: int
     unique_paths: int
     outliers_rejected: int
-    survey_targets: list[SurveyTarget]
     transmitter_positions: int
     receiver_positions: int
     coverage_pct: float
     holdout_mae_db: float | None
     spatially_observable: bool
     warnings: list[str]
+    survey_targets: list[SurveyTarget]
     rays: list[dict[str, float]]
-    model_description: str
-
-
-class CalibrationPoint(BaseModel):
-    distance_m: float = Field(ge=1, le=200)
-    rssi_dbm: float = Field(ge=-130, le=0)
-    line_of_sight: bool = True
-
-class CalibrationRequest(RouterRequest):
-    samples: list[CalibrationPoint] = Field(min_length=8, max_length=300)
-
-class CalibrationResponse(BaseModel):
-    baseline_dbm_at_1m: float
-    path_loss_exponent: float
-    samples_used: int
-    median_abs_error_db: float
-    warnings: list[str]
     model_description: str
