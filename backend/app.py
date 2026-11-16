@@ -10,6 +10,8 @@ from pydantic import BaseModel
 from demo import make_demo
 from models import RouterRequest, ReconstructionRequest, ReconstructionResponse
 from reconstruction import reconstruct
+from calibration import calibrate
+from models import CalibrationRequest, CalibrationResponse
 
 app = FastAPI(title="Maps RF Reconstruction API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -74,6 +76,17 @@ def run_reconstruction(payload: ReconstructionRequest):
     try:
         classify_router(payload.router_identifier)
         return reconstruct(payload)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.post("/api/calibrate", response_model=CalibrationResponse)
+def calibrate_path_loss(payload: CalibrationRequest):
+    try:
+        classify_router(payload.identifier)
+        return calibrate(payload)
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
     except ValueError as exc:
