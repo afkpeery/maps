@@ -11,6 +11,7 @@ import numpy as np
 from scipy import sparse
 
 from models import ReconstructionRequest, ReconstructionResponse
+from quality import aggregate, angles_by_cell, suggest
 
 
 def _ray_weights(x0: float, y0: float, x1: float, y1: float, nx: int, ny: int, cw: float, ch: float):
@@ -96,16 +97,21 @@ def _fit(A: sparse.csr_matrix, b: np.ndarray, nx: int, ny: int, epochs: int = 18
 def reconstruct(req: ReconstructionRequest) -> ReconstructionResponse:
     if not req.authorized:
         raise PermissionError("Mapping requires explicit network and building authorization.")
-    A, b, nx, ny, cw, ch = _system(req)
+    unique, rejected = aggregate(req.samples, req.width_m, req.height_m)
+    if len(unique) < 24:
+        raise ValueError("At least 24 geometrically distinct radio paths are required; repeated packets do not count.")
+    fit_req = req.model_copy(update={"samples": unique})
+    A, b, nx, ny, cw, ch = _system(fit_req)
     if A.nnz == 0:
         raise ValueError("No valid radio paths are present.")
-    tx = {(round(s.tx_x, 1), round(s.tx_y, 1)) for s in req.samples}
+    tx = {(round(s.tx_x, 1), round(s.tx_y, 1)) for s in unique}
     rx = {(round(s.rx_x, 1), round(s.rx_y, 1)) for s in req.samples}
     # Distinct positions and crossing paths matter more than packet count alone.
     coverage = np.asarray((A > 0).sum(axis=0)).ravel()
+    diversity = angles_by_cell(A, unique, nx*ny)
     coverage_pct = float((coverage >= 3).mean() * 100)
     angles = set()
-    for s in req.samples:
+    for s in unique:
         dx, dy = s.rx_x - s.tx_x, s.rx_y - s.tx_y
         angles.add(round((np.arctan2(dy, dx) % np.pi) / np.pi * 12))
     observable = len(tx) >= 2 and len(rx) >= 8 and len(angles) >= 4 and coverage_pct >= 30
@@ -118,6 +124,12 @@ def reconstruct(req: ReconstructionRequest) -> ReconstructionResponse:
         warnings.append("Insufficient crossing angles; move receivers around different sides of the space.")
     if coverage_pct < 45:
         warnings.append("Low ray coverage; unobserved areas are not reliable.")
+    if len(req.samples) > len(unique):
+        warnings.append(f"Combined {len(req.samples)} readings into {len(unique)} independent path geometries.")
+    if rejected:
+        warnings.append(f"Rejected {rejected} inconsistent repeat RSSI values.")
+    if float((diversity >= 2).mean()) < 0.3:
+        warnings.append("Low angular diversity: inferred barriers may be ambiguous.")
     if req.source == "measured":
         warnings.append("Results are RF attenuation estimates, not validated architectural walls. Calibrate radio path-loss parameters.")
     # Fixed holdout split for reproducibility. Avoid holdout on tiny datasets.
@@ -128,7 +140,7 @@ def reconstruct(req: ReconstructionRequest) -> ReconstructionResponse:
     x = _fit(A[train_mask], b[train_mask], nx, ny)
     mae = float(np.mean(np.abs(A[hold] @ x - b[hold]))) if len(hold) else None
     # Coverage alone is not statistically calibrated confidence; explicitly label as support.
-    confidence = np.minimum(1., coverage / 16.) * np.sqrt(np.minimum(1., coverage / max(1, len(b) / 14.)))
+    confidence = np.minimum(1., coverage / 12.) * np.minimum(1., diversity / 3.)
     if mae is not None:
         confidence *= np.exp(-mae / 22.0)
     confidence = np.minimum(1, confidence)
@@ -136,12 +148,12 @@ def reconstruct(req: ReconstructionRequest) -> ReconstructionResponse:
     x[coverage < 2] = 0.
     attenuation = np.round(x.reshape(ny, nx), 3).tolist()
     conf = np.round(confidence.reshape(ny, nx), 3).tolist()
-    rays = [dict(tx_x=s.tx_x, tx_y=s.tx_y, rx_x=s.rx_x, rx_y=s.rx_y) for s in req.samples[:160]]
+    rays = [dict(tx_x=s.tx_x, tx_y=s.tx_y, rx_x=s.rx_x, rx_y=s.rx_y) for s in unique[:160]]
     return ReconstructionResponse(
         source=req.source, router_identifier=req.router_identifier, nx=nx, ny=ny,
         width_m=req.width_m, height_m=req.height_m, cell_width_m=cw, cell_height_m=ch,
-        attenuation=attenuation, confidence=conf, obstruction_threshold=1.4,
-        measurements=len(b), transmitter_positions=len(tx), receiver_positions=len(rx),
+        attenuation=attenuation, confidence=conf, angular_diversity=diversity.reshape(ny,nx).tolist(), obstruction_threshold=1.4,
+        measurements=len(req.samples), unique_paths=len(unique), outliers_rejected=rejected, survey_targets=suggest(coverage,diversity,nx,ny,cw,ch), transmitter_positions=len(tx), receiver_positions=len(rx),
         coverage_pct=round(coverage_pct, 1), holdout_mae_db=round(mae, 2) if mae is not None else None,
         spatially_observable=observable, warnings=warnings, rays=rays,
         model_description="Nonnegative, spatially regularized RSSI attenuation tomography; confidence visualizes measurement support, not a calibrated accuracy probability."
