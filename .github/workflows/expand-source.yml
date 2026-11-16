@@ -1,0 +1,44 @@
+name: Expand MAPS source archive
+on:
+  push:
+    paths:
+      - '.github/workflows/expand-source.yml'
+      - 'maps (1).zip'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  expand:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract source into repository
+        run: |
+          python3 - <<'PY'
+          import pathlib, zipfile
+          archive=pathlib.Path("maps (1).zip")
+          if not archive.exists():
+              raise SystemExit("Missing initial source archive")
+          with zipfile.ZipFile(archive) as z:
+              for item in z.infolist():
+                  if item.is_dir():
+                      continue
+                  p=pathlib.PurePosixPath(item.filename)
+                  if len(p.parts)<2 or p.parts[0]!="maps" or ".." in p.parts:
+                      raise SystemExit("Unexpected archive path: "+item.filename)
+                  rel=pathlib.Path(*p.parts[1:])
+                  target=pathlib.Path.cwd()/rel
+                  target.parent.mkdir(parents=True,exist_ok=True)
+                  if rel.parts[:2]==(".github","workflows") and rel.name=="expand-source.yml":
+                      continue
+                  target.write_bytes(z.read(item))
+          PY
+      - name: Commit extracted source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github README.md LICENSE Makefile agent backend frontend .gitignore
+          if ! git diff --cached --quiet; then
+            git commit -m "Publish MAPS application source from initial archive"
+            git push
+          fi
