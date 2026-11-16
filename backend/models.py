@@ -65,3 +65,20 @@ class ReconstructionResponse(BaseModel):
     warnings: list[str]
     rays: list[dict[str, float]]
     model_description: str
+
+
+class CalibrationPoint(BaseModel):
+    distance_m: float = Field(ge=1, le=200)
+    rssi_dbm: float = Field(ge=-130, le=0)
+    line_of_sight: bool = True
+
+class CalibrationRequest(RouterRequest):
+    samples: list[CalibrationPoint] = Field(min_length=8, max_length=300)
+
+class CalibrationResponse(BaseModel):
+    baseline_dbm_at_1m: float
+    path_loss_exponent: float
+    samples_used: int
+    median_abs_error_db: float
+    warnings: list[str]
+    model_description: str
