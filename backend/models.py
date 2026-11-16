@@ -44,6 +44,13 @@ class CellInfo(BaseModel):
     confidence: float
 
 
+class SurveyTarget(BaseModel):
+    x_m: float
+    y_m: float
+    support: int
+    angular_bins: int
+    reason: str
+
 class ReconstructionResponse(BaseModel):
     source: Literal["measured", "simulated"]
     router_identifier: str
@@ -55,8 +62,12 @@ class ReconstructionResponse(BaseModel):
     cell_height_m: float
     attenuation: list[list[float]]
     confidence: list[list[float]]
+    angular_diversity: list[list[int]]
     obstruction_threshold: float
     measurements: int
+    unique_paths: int
+    outliers_rejected: int
+    survey_targets: list[SurveyTarget]
     transmitter_positions: int
     receiver_positions: int
     coverage_pct: float
