@@ -127,3 +127,12 @@ If your GitHub account uses HTTPS authentication, configure Git Credential Manag
 ## License
 
 MIT, see `LICENSE`.
+
+
+## Accuracy phase 2 (implemented on GitHub)
+
+- `POST /api/calibrate` performs robust log-distance path-loss calibration using 8+ line-of-sight reference measurements at three or more distinct distances spanning at least 2×. Calibration is device and environment specific.
+- Repeated packets on the same measured radio geometry are aggregated by their median, with gross outliers suppressed. Repeats do **not** count as independent rays.
+- Every result now includes `unique_paths`, `outliers_rejected`, `angular_diversity`, and `survey_targets`. Suggested targets are low-evidence regions; they are **not** verified accessible rooms.
+- RF predictions and support scores are not architectural ground truth or statistically calibrated wall-detection probabilities.
+- Low-level CSI capture, verified wall extraction and automatic mapping from one stationary router remain unimplemented.
