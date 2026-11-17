@@ -39,12 +39,14 @@ npm run dev
 
 Open **http://127.0.0.1:5173**. The frontend dev proxy forwards `/api` to `127.0.0.1:8000`. Do not expose the local MVP to the internet; it has no user authentication service or deployment hardening.
 
+The UI probes `GET /api/health` on load. If the engine is not running, the page shows an offline banner with the exact command to start it, rather than failing silently on the first action.
+
 ## Try the end-to-end demo
 
 1. Enter `192.168.1.1` (only a **label** for this simulated session).
 2. Check the authorization box for your own intended environment.
 3. Click **Run synthetic demo**.
-4. Explore simulated attenuation in 2D/3D, with support and quality metrics. It **does not** scan that address.
+4. Explore simulated attenuation in 2D/3D, with support and quality metrics. It **does not** scan that address. Simulated results are labelled as such above the map.
 
 ## Reconstruct an authorized measurement dataset
 
@@ -65,9 +67,13 @@ tx_x,tx_y,rx_x,rx_y,rssi_dbm,baseline_dbm_at_1m,path_loss_exponent
 
 ### API
 
-`POST /api/identify` validates a local identifier and returns `ready_to_map=false` because no compatible sensing agent is connected.
+`GET /api/health` reports engine status, the active mode, and whether measurement hardware is attached. The UI uses it to show a live connection state.
+
+`POST /api/identify` validates a local identifier and returns `ready_to_map=false` because no compatible sensing agent is connected. The UI displays which identifier class was accepted (`local_ip`, `local_hostname`, or `ssid`) and states plainly that no access was verified.
 
 `POST /api/demo` generates an explicitly synthetic six-transmitter example, then runs the **same reconstruction engine** as real data.
+
+`POST /api/calibrate` fits log-distance path-loss parameters from 8+ line-of-sight reference measurements at three or more distinct distances spanning at least 2×.
 
 `POST /api/reconstruct` accepts `{router_identifier, authorized, width_m, height_m, cell_size_m, samples, source:"measured"}`. View the full schema at `http://127.0.0.1:8000/docs`.
 
@@ -100,6 +106,8 @@ pip install pytest httpx
 cd backend
 python -m pytest -q
 cd ../frontend
+npm install
+npm run typecheck
 npm run build
 ```
 
@@ -110,24 +118,29 @@ npm run build
 - All inference remains an *attenuation hypothesis*. The 3D viewer displays extruded RF estimates, **not actual architecture**.
 - Live CI or deployment does not demonstrate sensing capability; actual hardware integration remains future work.
 
-## Push into the new GitHub repo named `maps`
+## Working with this repository
 
-Create an **empty** repository named `maps` in GitHub first (do not initialize it with a README). Then run from the extracted `maps/` directory:
+This repository is already initialised and carries commits. Clone it rather than creating a new one:
 
 ```bash
-git init -b main
-git add .
-git commit -m "Initial MAPS RF reconstruction MVP"
-git remote add origin https://github.com/YOUR_USERNAME/maps.git
-git push -u origin main
+git clone https://github.com/afkpeery/maps.git
+cd maps
 ```
 
-If your GitHub account uses HTTPS authentication, configure Git Credential Manager or use SSH. Replace `YOUR_USERNAME` with your account login.
+To push subsequent work, create a branch, commit, and open a pull request:
+
+```bash
+git checkout -b my-change
+git add .
+git commit -m "Describe the change"
+git push -u origin my-change
+```
+
+Do **not** run `git init` and `git remote add origin` against this repository: the remote already exists and the history is non-empty, so those commands fail. If your GitHub account uses HTTPS authentication, configure Git Credential Manager or use SSH.
 
 ## License
 
 MIT, see `LICENSE`.
-
 
 ## Accuracy phase 2 (implemented on GitHub)
 
