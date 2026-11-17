@@ -1,8 +1,19 @@
 # MAPS · Wi-Fi Spatial Intelligence
 
+**Version 0.3 — functioning synthetic demo + opt-in local hardware bridge**
+
 A **local-first, authorization-required MVP** for RF attenuation tomography. Enter a private router IPv4 address, local hostname, or SSID; validate the identifier; import **spatially referenced and calibrated** Wi-Fi RSSI measurements; reconstruct and inspect a probabilistic obstruction heatmap in 2D/3D; export JSON/SVG. A separate, clearly labeled synthetic dataset lets you test the entire mapping pipeline.
 
 > **Important:** Merely entering a router IP or SSID **cannot** reveal a building's actual floor plan. Browser JavaScript cannot retrieve CSI or low-level wireless samples from an arbitrary router. This MVP never probes router interfaces or third-party networks. It does not claim verified walls, doors, or room dimensions, and does not provide remote scanning or unauthorized access.
+
+## Start here — try the demo without network access
+
+1. Follow the instructions below to start FastAPI and Vite locally.
+2. Open `http://127.0.0.1:5173`. The router input initially displays **`192.168.1.6` as an example identifier only**. No connection, authorization or network scan is implied.
+3. Click **Run synthetic demo**. This calls `GET /api/demo/preview` with a separate `SYNTHETIC_DEMO_ONLY` identity. No router is contacted. Explore the 2D and 3D RF attenuation views, coverage, warnings, and survey targets.
+4. Open **Signal Laboratory** for actual host hardware capability reporting and optional authorized captures. Open **Projects** to save/reopen reconstruction JSON locally; nothing auto-uploads to a cloud.
+
+> The 3D model represents estimated radio attenuation, **not** literal walls or verified room boundaries. A router IP/SSID alone never yields a real floor plan.
 
 ## Preview features
 
@@ -110,29 +121,55 @@ npm run build
 - All inference remains an *attenuation hypothesis*. The 3D viewer displays extruded RF estimates, **not actual architecture**.
 - Live CI or deployment does not demonstrate sensing capability; actual hardware integration remains future work.
 
-## Push into the new GitHub repo named `maps`
+## Repository
 
-Create an **empty** repository named `maps` in GitHub first (do not initialize it with a README). Then run from the extracted `maps/` directory:
-
-```bash
-git init -b main
-git add .
-git commit -m "Initial MAPS RF reconstruction MVP"
-git remote add origin https://github.com/YOUR_USERNAME/maps.git
-git push -u origin main
-```
-
-If your GitHub account uses HTTPS authentication, configure Git Credential Manager or use SSH. Replace `YOUR_USERNAME` with your account login.
+The project is maintained at https://github.com/afkpeery/maps. The frontend/backend test workflow is in `.github/workflows/check.yml`.
 
 ## License
 
 MIT, see `LICENSE`.
 
+## v0.2: calibration and measurement-quality improvements
 
-## Accuracy phase 2 (implemented on GitHub)
+- `POST /api/calibrate`: fits baseline dBm at 1 meter and the path-loss exponent using robust regression over **8+ clear-line-of-sight** reference readings. Reference CSV format: `distance_m,rssi_dbm,line_of_sight`. Readings must span at least three distances over a 2× range; calibration stays specific to hardware, frequency band and environment. This is not an automatic router-only capability.
+- In `/api/reconstruct`, measurements from approximately the same physical ray are combined with a median instead of inflating spatial evidence. Large RSSI deviations in repeated groups (>=4 readings) can be rejected. Fewer than 24 distinct rays are rejected.
+- A crossing-angle layer (0–6 orientation bins per grid cell) and spatial coverage candidates show where additional authorized measurements would improve evidence. Target coordinates are **suggested regions, not verified accessible rooms**.
+- The signal laboratory now shows total vs. unique paths, outlier count, reference calibration residuals, angular diversity, and proposed low-evidence survey regions.
+- Holdout prediction error continues to quantify RF-path fit only, not accuracy against architectural ground truth. Repeated packets from one path do not leak into training and validation sets as independent links.
 
-- `POST /api/calibrate` performs robust log-distance path-loss calibration using 8+ line-of-sight reference measurements at three or more distinct distances spanning at least 2×. Calibration is device and environment specific.
-- Repeated packets on the same measured radio geometry are aggregated by their median, with gross outliers suppressed. Repeats do **not** count as independent rays.
-- Every result now includes `unique_paths`, `outliers_rejected`, `angular_diversity`, and `survey_targets`. Suggested targets are low-evidence regions; they are **not** verified accessible rooms.
-- RF predictions and support scores are not architectural ground truth or statistically calibrated wall-detection probabilities.
-- Low-level CSI capture, verified wall extraction and automatic mapping from one stationary router remain unimplemented.
+### Calibrate via API
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/calibrate \
+  -H 'Content-Type: application/json' \
+  -d '{"identifier":"HomeNetwork","authorized":true,"samples":[{"distance_m":1,"rssi_dbm":-40},{"distance_m":1.5,"rssi_dbm":-44},{"distance_m":2,"rssi_dbm":-46},{"distance_m":3,"rssi_dbm":-50},{"distance_m":4,"rssi_dbm":-52},{"distance_m":6,"rssi_dbm":-56},{"distance_m":8,"rssi_dbm":-58},{"distance_m":10,"rssi_dbm":-60}]}'
+```
+
+The returned coefficients can be used for missing values in imported readings via the frontend calibration action; supplied per-row coefficients take precedence. Use genuine reference measurements, not the example values above.
+
+
+## Phase 3 — functioning hardware integration architecture
+
+- `GET /api/demo/preview` offers an authorization-free **synthetic** demo, entirely isolated from any real router identifier or sensor.
+- `GET /api/hardware/capabilities` reports whether the **local backend host** can run the Linux `iw` associated-link adapter. CSI is explicitly marked unimplemented.
+- `POST /api/hardware/capture` reads the current Linux associated Wi-Fi link RSSI in dBm, with explicit authorization, an opt-in environment flag and a 20+ character local token; optionally checks the specific BSSID to guard against mesh/AP roaming.
+- **Signal Laboratory** now has adapter status, surveyed-coordinate entry, token-protected capture, locally accumulated readings, CSV export and measurement-based reconstruction.
+- **Projects** supports explicit local JSON save/reopen; no background cloud sync or storage of capture tokens.
+- The initial router field now displays `192.168.1.6` solely as a **non-connected example**, while the one-click synthetic demo always uses `SYNTHETIC_DEMO_ONLY`.
+
+See [Hardware integration](docs/HARDWARE_INTEGRATION.md) for setup, security boundaries and REST API, and [Accuracy & validation](docs/ACCURACY_VALIDATION.md) for what can/cannot be claimed from RSSI.
+
+### Hardware quickstart (Linux, local only)
+
+```bash
+# Set these on the computer with an already-connected supported Wi-Fi interface:
+export MAPS_ENABLE_LOCAL_CAPTURE=1
+export MAPS_HARDWARE_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+# Keep this token secret; paste it only in your own local MAPS Signal Laboratory.
+cd backend
+uvicorn app:app --host 127.0.0.1 --port 8000
+```
+
+Run the Vite frontend separately as above. Do not expose this API publicly. The existing CLI `agent/iw_capture.py` remains an alternative workflow.
+
+**This is a testable research MVP, not a fully deployed device-agnostic Wi-Fi tomography product.** 3D architectural wall recognition, CSI integration, automated router login, multi-floor mapping and verified dimension estimates are still outstanding.

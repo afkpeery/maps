@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -11,8 +11,9 @@ from demo import make_demo
 from models import RouterRequest, ReconstructionRequest, ReconstructionResponse, CalibrationRequest, CalibrationResponse
 from reconstruction import reconstruct
 from calibration import calibrate
+from hardware import CaptureRequest, CapturedReading, SensorError, capture_reading, capabilities
 
-app = FastAPI(title="Maps RF Reconstruction API", version="0.2.0")
+app = FastAPI(title="Maps RF Reconstruction API", version="0.3.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
                    allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
 
@@ -88,5 +89,31 @@ def run_calibration(payload: CalibrationRequest):
         return calibrate(payload)
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/demo/preview", response_model=ReconstructionResponse)
+def preview_demo():
+    """Public synthetic-only data. Never interacts with user hardware or real router."""
+    return reconstruct(make_demo("SYNTHETIC_DEMO_ONLY"))
+
+
+@app.get("/api/hardware/capabilities")
+def hardware_capabilities():
+    """Report *server-side* adapter support; no sensing or scanning performed."""
+    return capabilities()
+
+
+@app.post("/api/hardware/capture", response_model=CapturedReading)
+def hardware_capture(payload: CaptureRequest, x_maps_hardware_token: str = Header(default="")):
+    """A single opt-in RSSI reading from the already-associated local Wi-Fi link."""
+    try:
+        classify_router(payload.router_identifier)
+        return capture_reading(payload, x_maps_hardware_token)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except SensorError as exc:
+        raise HTTPException(503, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
